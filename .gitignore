@@ -1,0 +1,15 @@
+# Python files #
+################
+__pycache__
+# setup.py working directory
+build
+# setup.py dist directory
+dist
+doc/build
+doc/cdoc/build
+# Egg metadata
+*.egg-info
+# The shelf plugin uses this dir
+MANIFEST
+.cache
+pip-wheel-metadata
