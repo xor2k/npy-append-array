@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="npy-append-array",
-    version="0.9.2",
+    version="0.9.3",
     author="Michael Siebert",
     author_email="michael.siebert2k@gmail.com",
     description="Allows to create Numpy `.npy` files that are larger than the main memory",
