@@ -1,8 +1,21 @@
 import numpy as np
 import os.path
-from struct import pack, unpack
+from struct import pack
 from io import BytesIO
 
+def _create_header_bytes(header_map, spare_space=False):
+    io = BytesIO()
+    np.lib.format.write_array_header_2_0(io, header_map)
+
+    if spare_space:
+        io.getbuffer()[8:12] = pack("<I", int(
+            io.getbuffer().nbytes-12+64
+        ))
+        io.getbuffer()[-1] = 32
+        io.write(b" "*64)
+        io.getbuffer()[-1] = 10
+
+    return io.getbuffer()
 class NpyAppendArray:
     def __init__(self, filename):
         self.filename = filename
@@ -16,15 +29,12 @@ class NpyAppendArray:
         fp = self.fp
 
         magic = np.lib.format.read_magic(fp)
-        is_version_1 = magic[0] == 1
 
-        if not ((magic[0] == 1 or magic[0] == 2) and magic[1] == 0):
-            raise NotImplementedError(
-                "version (%d, %d) not implemented" % magic
-            )
+        if not (magic[0] == 2 and magic[1] == 0): raise NotImplementedError(
+            "version (%d, %d) not implemented for NpyAppendArray" % magic
+        )
 
-        self.header = np.lib.format.read_array_header_1_0(fp) if \
-            is_version_1 else np.lib.format.read_array_header_2_0(fp)
+        self.header = np.lib.format.read_array_header_2_0(fp)
 
         if self.header[1] != False:
             raise NotImplementedError("fortran_order not implemented")
@@ -32,20 +42,6 @@ class NpyAppendArray:
         self.header_length = fp.tell()
 
         self.__is_init = True
-
-    def __create_header_bytes(self, header_map, spare_space=False):
-        io = BytesIO()
-        np.lib.format.write_array_header_2_0(io, header_map)
-
-        if spare_space:
-            io.getbuffer()[8:12] = pack("<I", int(
-                io.getbuffer().nbytes-12+64
-            ))
-            io.getbuffer()[-1] = 32
-            io.write(b" "*64)
-            io.getbuffer()[-1] = 10
-
-        return io.getbuffer()
 
     def append(self, arr):
         if not arr.flags.c_contiguous:
@@ -55,7 +51,7 @@ class NpyAppendArray:
 
         if not self.__is_init:
             with open(self.filename, "wb") as fp0:
-                fp0.write(self.__create_header_bytes({
+                fp0.write(_create_header_bytes({
                     'descr': arr_descr,
                     'fortran_order': False,
                     'shape': arr.shape
@@ -97,11 +93,11 @@ class NpyAppendArray:
             'shape': new_header[0]
         }
 
-        new_header_bytes = self.__create_header_bytes(new_header_map, True)
+        new_header_bytes = _create_header_bytes(new_header_map, True)
         header_length = self.header_length
 
         if header_length != len(new_header_bytes):
-            new_header_bytes = self.__create_header_bytes(new_header_map)
+            new_header_bytes = _create_header_bytes(new_header_map)
 
             if header_length != len(new_header_bytes):
                 raise TypeError("header length mismatch, old: %d, new: %d"%(
