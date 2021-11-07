@@ -145,54 +145,8 @@ class NpyAppendArray:
         if self.fp is not None:
             self.fp.close()
 
-    def load(self):
-        """
-        loads the file as memmap
-        """
-        return np.load(self.filename, mmap_mode="r")
-
     def __enter__(self):
-        """
-        supports 'with' interface to ensure file handle is closed after use
-        
-        Example:
-        -------
-        arr1 = np.array([[1,2],[3,4]])
-        arr2 = np.array([[1,2],[3,4],[5,6]])
-    
-        filename='out.npy'
-        with NpyAppendArray(filename) as npaa:
-            npaa.append(arr1)
-
-        with NpyAppendArray(filename) as npaa:
-            npaa.append(arr1)
-
-        with NpyAppendArray(filename) as npaa:
-            data = npaa.load()
-            
-        print(data)
-        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        supports 'with' interface to ensure file handle is closed after use
-        
-        Example:
-        -------
-        arr1 = np.array([[1,2],[3,4]])
-        arr2 = np.array([[1,2],[3,4],[5,6]])
-    
-        filename='out.npy'
-        with NpyAppendArray(filename) as npaa:
-            npaa.append(arr1)
-
-        with NpyAppendArray(filename) as npaa:
-            npaa.append(arr1)
-
-        with NpyAppendArray(filename) as npaa:
-            data = npaa.load()
-            
-        print(data)
-        """
         del self
