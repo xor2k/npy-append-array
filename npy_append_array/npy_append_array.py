@@ -10,9 +10,6 @@ def header_tuple_dict(tuple_in):
         'descr': np.lib.format.dtype_to_descr(tuple_in[2])
     }
 
-def has_fortran_order(arr):
-    return not arr.flags.c_contiguous and arr.flags.f_contiguous
-
 def peek(fp, length):
     pos = fp.tell()
     tmp = fp.read(length)
@@ -40,7 +37,7 @@ class NpyAppendArray:
                 "version (%d, %d) not implemented"%magic
             )
 
-        self.header_length, = unpack("<H", peek(fp, 2)) if self.is_version_1 \
+        header_length_tmp, = unpack("<H", peek(fp, 2)) if self.is_version_1 \
             else unpack("<I", peek(fp, 4))
 
         self.header = np.lib.format.read_array_header_1_0(fp) if \
@@ -51,9 +48,11 @@ class NpyAppendArray:
 
         fp.seek(0)
 
-        self.header_bytes = fp.read(self.header_length + (
+        self.header_bytes = fp.read(header_length_tmp + (
             10 if self.is_version_1 else 12
         ))
+
+        self.header_length = len(self.header_bytes)
 
         fp.seek(0, 2)
 
@@ -76,9 +75,6 @@ class NpyAppendArray:
     def append(self, arr):
         if not arr.flags.c_contiguous:
             raise NotImplementedError("ndarray needs to be c_contiguous")
-
-        if has_fortran_order(arr):
-            raise NotImplementedError("fortran_order not implemented")
 
         arr_descr = np.lib.format.dtype_to_descr(arr.dtype)
 
@@ -109,9 +105,8 @@ class NpyAppendArray:
                 len(arr.shape), len(shape)
             ))
 
-        for i, e in enumerate(shape):
-            if i > 0 and e != arr.shape[i]:
-                raise TypeError("ndarray shapes can only differ on zero axis")
+        if not all(l1 == l2 for l1, l2 in zip(shape[1:], arr.shape[1:])):
+            raise TypeError("ndarray shapes can only differ on zero axis")
 
         new_shape = list(shape)
         new_shape[0] += arr.shape[0]
@@ -123,7 +118,7 @@ class NpyAppendArray:
         new_header_map = header_tuple_dict(self.header)
 
         new_header_bytes = self.__create_header_bytes(new_header_map, True)
-        header_length = len(self.header_bytes)
+        header_length = self.header_length
 
         if header_length != len(new_header_bytes):
             new_header_bytes = self.__create_header_bytes(new_header_map)
@@ -149,4 +144,4 @@ class NpyAppendArray:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        del self
+        self.__del__()
