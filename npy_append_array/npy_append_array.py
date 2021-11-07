@@ -92,9 +92,9 @@ class NpyAppendArray:
 
         new_header = self.header
         new_header_map = {
-            'shape': new_header[0],
+            'descr': np.lib.format.dtype_to_descr(new_header[2]),
             'fortran_order': new_header[1],
-            'descr': np.lib.format.dtype_to_descr(new_header[2])
+            'shape': new_header[0]
         }
 
         new_header_bytes = self.__create_header_bytes(new_header_map, True)
