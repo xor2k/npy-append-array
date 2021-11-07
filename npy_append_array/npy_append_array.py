@@ -16,16 +16,15 @@ class NpyAppendArray:
         fp = self.fp
 
         magic = np.lib.format.read_magic(fp)
-        self.is_version_1 = magic[0] == 1 and magic[1] == 0
-        self.is_version_2 = magic[0] == 2 and magic[1] == 0
+        is_version_1 = magic[0] == 1
 
-        if not self.is_version_1 and not self.is_version_2:
+        if not ((magic[0] == 1 or magic[0] == 2) and magic[1] == 0):
             raise NotImplementedError(
-                "version (%d, %d) not implemented"%magic
+                "version (%d, %d) not implemented" % magic
             )
 
         self.header = np.lib.format.read_array_header_1_0(fp) if \
-            self.is_version_1 else np.lib.format.read_array_header_2_0(fp)
+            is_version_1 else np.lib.format.read_array_header_2_0(fp)
 
         if self.header[1] != False:
             raise NotImplementedError("fortran_order not implemented")
