@@ -46,15 +46,9 @@ class NpyAppendArray:
         if self.header[1] != False:
             raise NotImplementedError("fortran_order not implemented")
 
-        fp.seek(0)
-
-        header_bytes = fp.read(header_length_tmp + (
+        self.header_length = header_length_tmp + (
             10 if self.is_version_1 else 12
-        ))
-
-        self.header_length = len(header_bytes)
-
-        fp.seek(0, 2)
+        )
 
         self.__is_init = True
 
