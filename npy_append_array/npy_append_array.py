@@ -3,19 +3,6 @@ import os.path
 from struct import pack, unpack
 from io import BytesIO
 
-def header_tuple_dict(tuple_in):
-    return {
-        'shape': tuple_in[0],
-        'fortran_order': tuple_in[1],
-        'descr': np.lib.format.dtype_to_descr(tuple_in[2])
-    }
-
-def peek(fp, length):
-    pos = fp.tell()
-    tmp = fp.read(length)
-    fp.seek(pos)
-    return tmp
-
 class NpyAppendArray:
     def __init__(self, filename):
         self.filename = filename
@@ -37,18 +24,13 @@ class NpyAppendArray:
                 "version (%d, %d) not implemented"%magic
             )
 
-        header_length_tmp, = unpack("<H", peek(fp, 2)) if self.is_version_1 \
-            else unpack("<I", peek(fp, 4))
-
         self.header = np.lib.format.read_array_header_1_0(fp) if \
             self.is_version_1 else np.lib.format.read_array_header_2_0(fp)
 
         if self.header[1] != False:
             raise NotImplementedError("fortran_order not implemented")
 
-        self.header_length = header_length_tmp + (
-            10 if self.is_version_1 else 12
-        )
+        self.header_length = fp.tell()
 
         self.__is_init = True
 
@@ -109,7 +91,12 @@ class NpyAppendArray:
 
         self.fp.seek(0)
 
-        new_header_map = header_tuple_dict(self.header)
+        new_header = self.header
+        new_header_map = {
+            'shape': new_header[0],
+            'fortran_order': new_header[1],
+            'descr': np.lib.format.dtype_to_descr(new_header[2])
+        }
 
         new_header_bytes = self.__create_header_bytes(new_header_map, True)
         header_length = self.header_length
