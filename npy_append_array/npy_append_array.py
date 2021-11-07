@@ -48,11 +48,11 @@ class NpyAppendArray:
 
         fp.seek(0)
 
-        self.header_bytes = fp.read(header_length_tmp + (
+        header_bytes = fp.read(header_length_tmp + (
             10 if self.is_version_1 else 12
         ))
 
-        self.header_length = len(self.header_bytes)
+        self.header_length = len(header_bytes)
 
         fp.seek(0, 2)
 
@@ -127,8 +127,6 @@ class NpyAppendArray:
                 raise TypeError("header length mismatch, old: %d, new: %d"%(
                     header_length, len(new_header_bytes)
                 ))
-
-        self.header_bytes = new_header_bytes
 
         self.fp.write(new_header_bytes)
 
