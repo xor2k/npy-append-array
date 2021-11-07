@@ -31,7 +31,7 @@ class NpyAppendArray:
         magic = np.lib.format.read_magic(fp)
 
         if not (magic[0] == 2 and magic[1] == 0): raise NotImplementedError(
-            "version (%d, %d) not implemented for NpyAppendArray" % magic
+            "version (%d, %d) not implemented" % magic
         )
 
         self.header = np.lib.format.read_array_header_2_0(fp)
