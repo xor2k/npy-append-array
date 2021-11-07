@@ -45,7 +45,7 @@ filename = 'out.npy'
 # fully populating such an array, due to limits imposed by quantum mechanics,
 # would require more energy than would be needed to boil the oceans, compare
 # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
-# Therefore, a wide rangle of use cases should be coverable with this approach.
+# Therefore, a wide range of use cases should be coverable with this approach.
 
 # np.save(filename, arr1)
 
