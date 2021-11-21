@@ -1,21 +1,8 @@
 import numpy as np
 import os.path
 from struct import pack
-from io import BytesIO
+from io import BytesIO, SEEK_END, SEEK_SET
 
-def _create_header_bytes(header_map, spare_space=False):
-    io = BytesIO()
-    np.lib.format.write_array_header_2_0(io, header_map)
-
-    if spare_space:
-        io.getbuffer()[8:12] = pack("<I", int(
-            io.getbuffer().nbytes-12+64
-        ))
-        io.getbuffer()[-1] = 32
-        io.write(b" "*64)
-        io.getbuffer()[-1] = 10
-
-    return io.getbuffer()
 class NpyAppendArray:
     def __init__(self, filename):
         self.filename = filename
@@ -24,22 +11,64 @@ class NpyAppendArray:
         if os.path.isfile(filename):
             self.__init()
 
-    def __init(self):
-        self.fp = open(self.filename, mode="rb+")
+    def __create_header_bytes(self):
+        header_map = {
+            'descr': np.lib.format.dtype_to_descr(self.dtype),
+            'fortran_order': self.fortran_order,
+            'shape': tuple(self.shape)
+        }
+        io = BytesIO()
+        np.lib.format.write_array_header_2_0(io, header_map)
+
+        # create array header with 64 byte space space for shape to grow
+        io.getbuffer()[8:12] = pack("<I", int(io.getbuffer().nbytes-12+64))
+        io.getbuffer()[-1] = 32
+        io.write(b" "*64)
+        io.getbuffer()[-1] = 10
+
+        return io.getbuffer()
+
+    def __init(self, arr = None):
+        self.fp = open(self.filename, mode="rb+" if arr is None else "wb")
         fp = self.fp
 
-        magic = np.lib.format.read_magic(fp)
+        if arr is None:
+            magic = np.lib.format.read_magic(fp)
 
-        if not (magic[0] == 2 and magic[1] == 0): raise NotImplementedError(
-            "version (%d, %d) not implemented" % magic
-        )
+            if magic != (2, 0):
+                raise NotImplementedError(
+                    "version (%d, %d) not implemented" % magic
+                )
 
-        self.header = np.lib.format.read_array_header_2_0(fp)
+            header = np.lib.format.read_array_header_2_0(fp)
+            shape, self.fortran_order, self.dtype = header
+            self.shape = list(shape)
 
-        if self.header[1] != False:
-            raise NotImplementedError("fortran_order not implemented")
+            if self.fortran_order == True:
+                raise NotImplementedError("fortran_order not implemented")
 
-        self.header_length = fp.tell()
+            self.header_length = fp.tell()
+
+            header_length = self.header_length
+
+            new_header_bytes = self.__create_header_bytes()
+
+            if len(new_header_bytes) != header_length:
+                raise TypeError("no spare header space in target file %s" % (
+                    self.filename
+                ))
+
+            self.fp.seek(0, SEEK_END)
+
+        else:
+            self.shape, self.fortran_order, self.dtype = \
+                list(arr.shape), False, arr.dtype
+
+            fp.write(self.__create_header_bytes())
+
+            self.header_length = fp.tell()
+
+            arr.tofile(fp)
 
         self.__is_init = True
 
@@ -47,72 +76,53 @@ class NpyAppendArray:
         if not arr.flags.c_contiguous:
             raise NotImplementedError("ndarray needs to be c_contiguous")
 
-        arr_descr = np.lib.format.dtype_to_descr(arr.dtype)
-
         if not self.__is_init:
-            with open(self.filename, "wb") as fp0:
-                fp0.write(_create_header_bytes({
-                    'descr': arr_descr,
-                    'fortran_order': False,
-                    'shape': arr.shape
-                }, True))
-                arr.tofile(fp0)
-
-            # np.save(self.filename, arr)
-            self.__init()
+            self.__init(arr)
             return
 
-        descr = self.header[2]
-
-        if arr_descr != descr:
-            raise TypeError("incompatible ndarrays types %s and %s"%(
-                arr_descr, descr
+        if arr.dtype != self.dtype:
+            raise TypeError("incompatible ndarrays types %s and %s" % (
+                arr.dtype, self.dtype
             ))
 
-        shape = self.header[0]
+        shape = self.shape
 
         if len(arr.shape) != len(shape):
-            raise TypeError("incompatible ndarrays shape lengths %s and %s"%(
+            raise TypeError("incompatible ndarrays shape lengths %s and %s" % (
                 len(arr.shape), len(shape)
             ))
 
-        if not all(l1 == l2 for l1, l2 in zip(shape[1:], arr.shape[1:])):
+        if shape[1:] != list(arr.shape[1:]):
             raise TypeError("ndarray shapes can only differ on zero axis")
 
-        new_shape = list(shape)
-        new_shape[0] += arr.shape[0]
-        new_shape = tuple(new_shape)
-        self.header = (new_shape, self.header[1], self.header[2])
-
-        self.fp.seek(0)
-
-        new_header = self.header
-        new_header_map = {
-            'descr': np.lib.format.dtype_to_descr(new_header[2]),
-            'fortran_order': new_header[1],
-            'shape': new_header[0]
-        }
-
-        new_header_bytes = _create_header_bytes(new_header_map, True)
-        header_length = self.header_length
-
-        if header_length != len(new_header_bytes):
-            new_header_bytes = _create_header_bytes(new_header_map)
-
-            if header_length != len(new_header_bytes):
-                raise TypeError("header length mismatch, old: %d, new: %d"%(
-                    header_length, len(new_header_bytes)
-                ))
-
-        self.fp.write(new_header_bytes)
-
-        self.fp.seek(0, 2)
+        self.shape[0] += arr.shape[0]
 
         arr.tofile(self.fp)
 
+    def close(self):
+        if self.__is_init:
+            fp = self.fp
+            fp.seek(0, SEEK_SET)
+
+            new_header_bytes = self.__create_header_bytes()
+            header_length = self.header_length
+
+            # This can only happen if array became so large that header space
+            # space is exhausted, which requires more energy than is necessary
+            # to boil the earth's oceans:
+            # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
+            if header_length != len(new_header_bytes):
+                raise TypeError("header length mismatch, old: %d, new: %d" % (
+                    header_length, len(new_header_bytes)
+                ))
+
+            fp.write(new_header_bytes)
+            fp.close()
+
+            self.__is_init = False
+
     def __del__(self):
-        if self.fp is not None:
-            self.fp.close()
+        self.close()
 
     def __enter__(self):
         return self
