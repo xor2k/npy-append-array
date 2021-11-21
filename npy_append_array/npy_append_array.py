@@ -1,6 +1,5 @@
 import numpy as np
 import os.path
-from struct import pack
 from io import BytesIO, SEEK_END, SEEK_SET
 
 class NpyAppendArray:
@@ -11,7 +10,8 @@ class NpyAppendArray:
         if os.path.isfile(filename):
             self.__init()
 
-    def __create_header_bytes(self):
+    def __create_header_bytes(self, spare_space = True):
+        from struct import pack
         header_map = {
             'descr': np.lib.format.dtype_to_descr(self.dtype),
             'fortran_order': self.fortran_order,
@@ -21,10 +21,13 @@ class NpyAppendArray:
         np.lib.format.write_array_header_2_0(io, header_map)
 
         # create array header with 64 byte space space for shape to grow
-        io.getbuffer()[8:12] = pack("<I", int(io.getbuffer().nbytes-12+64))
-        io.getbuffer()[-1] = 32
-        io.write(b" "*64)
-        io.getbuffer()[-1] = 10
+        io.getbuffer()[8:12] = pack("<I", int(
+            io.getbuffer().nbytes-12+(64 if spare_space else 0)
+        ))
+        if spare_space:
+            io.getbuffer()[-1] = 32
+            io.write(b" "*64)
+            io.getbuffer()[-1] = 10
 
         return io.getbuffer()
 
@@ -107,14 +110,21 @@ class NpyAppendArray:
             new_header_bytes = self.__create_header_bytes()
             header_length = self.header_length
 
-            # This can only happen if array became so large that header space
-            # space is exhausted, which requires more energy than is necessary
-            # to boil the earth's oceans:
-            # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
+            print(len(new_header_bytes))
+
             if header_length != len(new_header_bytes):
-                raise TypeError("header length mismatch, old: %d, new: %d" % (
-                    header_length, len(new_header_bytes)
-                ))
+                new_header_bytes = self.__create_header_bytes(False)
+
+                print(len(new_header_bytes))
+
+                # This can only happen if array became so large that header space
+                # space is exhausted, which requires more energy than is necessary
+                # to boil the earth's oceans:
+                # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
+                if header_length != len(new_header_bytes):
+                    raise TypeError("header length mismatch, old: %d, new: %d" % (
+                        header_length, len(new_header_bytes)
+                    ))
 
             fp.write(new_header_bytes)
             fp.close()
