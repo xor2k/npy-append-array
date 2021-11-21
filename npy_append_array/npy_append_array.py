@@ -110,12 +110,8 @@ class NpyAppendArray:
             new_header_bytes = self.__create_header_bytes()
             header_length = self.header_length
 
-            print(len(new_header_bytes))
-
             if header_length != len(new_header_bytes):
                 new_header_bytes = self.__create_header_bytes(False)
-
-                print(len(new_header_bytes))
 
                 # This can only happen if array became so large that header space
                 # space is exhausted, which requires more energy than is necessary
