@@ -75,6 +75,30 @@ class NpyAppendArray:
 
         self.__is_init = True
 
+    def __write_header(self):
+        fp = self.fp
+        fp.seek(0, SEEK_SET)
+
+        new_header_bytes = self.__create_header_bytes()
+        header_length = self.header_length
+
+        if header_length != len(new_header_bytes):
+            new_header_bytes = self.__create_header_bytes(False)
+
+            # This can only happen if array became so large that header space
+            # space is exhausted, which requires more energy than is necessary
+            # to boil the earth's oceans:
+            # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
+            if header_length != len(new_header_bytes):
+                raise TypeError(
+                    "header length mismatch, old: %d, new: %d" % (
+                        header_length, len(new_header_bytes)
+                    )
+                )
+
+        fp.write(new_header_bytes)
+        fp.seek(0, SEEK_END)
+
     def append(self, arr):
         if not arr.flags.c_contiguous:
             raise NotImplementedError("ndarray needs to be c_contiguous")
@@ -102,28 +126,11 @@ class NpyAppendArray:
 
         arr.tofile(self.fp)
 
+        self.__write_header()
+
     def close(self):
         if self.__is_init:
-            fp = self.fp
-            fp.seek(0, SEEK_SET)
-
-            new_header_bytes = self.__create_header_bytes()
-            header_length = self.header_length
-
-            if header_length != len(new_header_bytes):
-                new_header_bytes = self.__create_header_bytes(False)
-
-                # This can only happen if array became so large that header space
-                # space is exhausted, which requires more energy than is necessary
-                # to boil the earth's oceans:
-                # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
-                if header_length != len(new_header_bytes):
-                    raise TypeError("header length mismatch, old: %d, new: %d" % (
-                        header_length, len(new_header_bytes)
-                    ))
-
-            fp.write(new_header_bytes)
-            fp.close()
+            self.fp.close()
 
             self.__is_init = False
 
