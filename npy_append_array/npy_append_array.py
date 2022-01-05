@@ -3,12 +3,40 @@ import os.path
 from io import BytesIO, SEEK_END, SEEK_SET
 
 class NpyAppendArray:
-    def __init__(self, filename):
+    """
+    appends/writes numpy arrays to file
+
+    :Example:
+    ----------------
+    >>> fname = 'c:/temp/temp.npy'
+
+    >>> ## saving
+    >>> arr = np.random.normal(0,1, (100,10))
+    >>> with NpyAppendArray(fname, 'w') as npa:
+    >>>     npa.save(arr)
+    >>>     npa.save(arr)
+    >>> assert np.load(fname).shape == (100, 10)
+
+    >>> ## appending
+    >>> with NpyAppendArray(fname, 'a') as npa:
+    >>>     npa.save(arr)
+    >>>     npa.save(arr)
+    >>> assert np.load(fname).shape == (300, 10)
+
+    >>> ## saving and then appending explicitly, independent of mode:
+    >>> for mode in 'aw':
+    >>>     with NpyAppendArray(fname, mode) as npa:
+    >>>         npa.write(arr)
+    >>>         npa.append(arr)
+    >>>     assert np.load(fname).shape == (200, 10)        
+    """
+    def __init__(self, filename, mode = 'a'):
         self.filename = filename
         self.fp = None
-        self.__is_init = False
-        if os.path.isfile(filename):
-            self.__init()
+        self.__is_init = None
+        self.mode = mode[0].lower()
+        if self.mode not in 'aw':
+            raise ValueError('mode can be either append or write')
 
     def __create_header_bytes(self, spare_space = True):
         from struct import pack
@@ -31,48 +59,48 @@ class NpyAppendArray:
 
         return io.getbuffer()
 
-    def __init(self, arr = None):
-        self.fp = open(self.filename, mode="rb+" if arr is None else "wb")
+    def __init(self):
+        try: 
+            return self.__init_from_existing()
+        except NotImplementedError:
+            ## we load and re-save the file, this time using NPA and extended headers to allow appending
+            arr = np.load(self.filename)
+            self.write(arr)
+            return self.__init_from_existing()
+        
+    def __init_from_existing(self):
+        if not os.path.isfile(self.filename):
+            self.__is_init = False
+            return
+
+        self.fp = open(self.filename, mode="rb+")
         fp = self.fp
+        magic = np.lib.format.read_magic(fp)
 
-        if arr is None:
-            magic = np.lib.format.read_magic(fp)
+        if magic != (2, 0):
+            raise NotImplementedError(
+                "version (%d, %d) not implemented" % magic
+            )
 
-            if magic != (2, 0):
-                raise NotImplementedError(
-                    "version (%d, %d) not implemented" % magic
-                )
+        header = np.lib.format.read_array_header_2_0(fp)
+        shape, self.fortran_order, self.dtype = header
+        self.shape = list(shape)
 
-            header = np.lib.format.read_array_header_2_0(fp)
-            shape, self.fortran_order, self.dtype = header
-            self.shape = list(shape)
+        if self.fortran_order == True:
+            raise NotImplementedError("fortran_order not implemented")
 
-            if self.fortran_order == True:
-                raise NotImplementedError("fortran_order not implemented")
+        self.header_length = fp.tell()
 
-            self.header_length = fp.tell()
+        header_length = self.header_length
 
-            header_length = self.header_length
+        new_header_bytes = self.__create_header_bytes()
 
-            new_header_bytes = self.__create_header_bytes()
+        if len(new_header_bytes) != header_length:
+            raise TypeError("no spare header space in target file %s" % (
+                self.filename
+            ))
 
-            if len(new_header_bytes) != header_length:
-                raise TypeError("no spare header space in target file %s" % (
-                    self.filename
-                ))
-
-            self.fp.seek(0, SEEK_END)
-
-        else:
-            self.shape, self.fortran_order, self.dtype = \
-                list(arr.shape), False, arr.dtype
-
-            fp.write(self.__create_header_bytes())
-
-            self.header_length = fp.tell()
-
-            arr.tofile(fp)
-
+        self.fp.seek(0, SEEK_END)
         self.__is_init = True
 
     def __write_header(self):
@@ -98,14 +126,26 @@ class NpyAppendArray:
 
         fp.write(new_header_bytes)
         fp.seek(0, SEEK_END)
+        
+    def write(self, arr):
+        """
+        writes an array to self.filename, overwriting existing file if there
+        """
+        fp = self.fp  = open(self.filename, mode="wb")
+        self.shape, self.fortran_order, self.dtype = list(arr.shape), False, arr.dtype
+        fp.write(self.__create_header_bytes())
+        self.header_length = fp.tell()
+        arr.tofile(fp)        
 
     def append(self, arr):
         if not arr.flags.c_contiguous:
             raise NotImplementedError("ndarray needs to be c_contiguous")
 
-        if not self.__is_init:
-            self.__init(arr)
-            return
+        if self.__is_init is None:
+            self.__init()
+        
+        if self.__is_init is False:
+            self.write(arr)
 
         if arr.dtype != self.dtype:
             raise TypeError("incompatible ndarrays types %s and %s" % (
@@ -128,6 +168,12 @@ class NpyAppendArray:
 
         self.__write_header()
 
+    def save(self, arr):
+        if self.mode == 'a':
+            return self.append(arr)
+        elif self.mode == 'w':
+            return self.write(arr)
+        
     def close(self):
         if self.__is_init:
             self.fp.close()
@@ -142,3 +188,4 @@ class NpyAppendArray:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.__del__()
+
