@@ -139,7 +139,9 @@ class NpyAppendArray:
 
     def append(self, arr):
         if not arr.flags.c_contiguous:
-            raise NotImplementedError("ndarray needs to be c_contiguous")
+            arr = np.ascontiguousarray(arr)
+            if not arr.flags.c_contiguous:
+                raise NotImplementedError("ndarray needs to be c_contiguous")
 
         if self.__is_init is None:
             self.__init()
