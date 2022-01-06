@@ -52,16 +52,8 @@ class NpyAppendArray:
 
         return io.getbuffer()
 
-    def __init(self):
-        try: 
-            return self.__init_from_existing()
-        except NotImplementedError:
-            ## we load and re-save the file, this time using NPA and extended headers to allow appending
-            arr = np.load(self.filename)
-            self.write(arr)
-            return self.__init_from_existing()
         
-    def __init_from_existing(self):
+    def __init(self):
         if not os.path.isfile(self.filename):
             self.__is_init = False
             return
