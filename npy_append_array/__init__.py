@@ -1,1 +1,1 @@
-from .npy_append_array import *
+from .npy_append_array import NpyAppendArray, recover, ensure_appendable, is_appendable

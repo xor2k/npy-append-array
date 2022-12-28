@@ -5,10 +5,10 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="npy-append-array",
-    version="0.9.13",
+    version="0.9.15",
     author="Michael Siebert",
     author_email="michael.siebert2k@gmail.com",
-    description="Create Numpy NPY files that are larger than the main memory",
+    description="Create Numpy .npy files that are larger than the main memory",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/xor2k/npy-append-array",
@@ -19,5 +19,5 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.6',
+    python_requires='>=3.8',
 )

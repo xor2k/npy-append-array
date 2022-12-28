@@ -1,138 +1,227 @@
-import numpy as np
-import os.path
+import os, numpy, tempfile, threading
+from numpy.lib import format
+from .format import _write_array_header, write_array
 from io import BytesIO, SEEK_END, SEEK_SET
 
+class _HeaderInfo():
+    def __init__(self, fp):
+        version = format.read_magic(fp)
+        shape, fortran_order, dtype = format._read_array_header(fp, version)
+        self.shape, self.fortran_order, self.dtype = (
+            shape, fortran_order, dtype
+        )
+
+        header_size = fp.tell()
+        self.header_size = header_size
+
+        new_header = BytesIO()
+        _write_array_header(new_header, {
+            "shape": shape,
+            "fortran_order": fortran_order,
+            "descr": format.dtype_to_descr(dtype)
+        })
+        self.new_header = new_header.getvalue()
+
+        fp.seek(0, SEEK_END)
+        self.data_length = fp.tell() - header_size
+
+        self.is_appendable = len(self.new_header) <= header_size
+
+        self.needs_recovery = not (
+            dtype.hasobject or self.data_length ==
+            numpy.multiply.reduce(shape) * dtype.itemsize
+        )
+
+def is_appendable(filename):
+    with open(filename, mode="rb") as fp:
+        return  _HeaderInfo(fp).is_appendable
+
+def needs_recovery(filename):
+    with open(filename, mode="rb") as fp:
+        return  _HeaderInfo(fp).needs_recovery
+
+def ensure_appendable(filename, inplace=False):
+    with open(filename, mode="rb+") as fp:
+        hi = _HeaderInfo(fp)
+
+        new_header_size = len(hi.new_header)
+
+        if hi.is_appendable:
+            return True
+
+        new_header, header_size = hi.new_header, hi.header_size
+        data_length = hi.data_length
+
+        # Set buffer size to 16 MiB to hide the Python loop overhead, see
+        # https://github.com/numpy/numpy/blob/main/numpy/lib/format.py
+        buffersize = min(16 * 1024 ** 2, data_length)
+        buffer_count = int(numpy.ceil(data_length / buffersize))
+
+        if inplace:
+            for i in buffersize * numpy.arange(buffer_count - 1, -1, -1):
+                fp.seek(header_size + i, SEEK_SET)
+                content = fp.read(buffersize)
+                fp.seek(new_header_size + i, SEEK_SET)
+                fp.write(content)
+
+            fp.seek(0, SEEK_SET)
+            fp.write(new_header)
+
+            return True
+
+        dirname, basename = os.path.split(fp.name)
+
+        fp2 = open(tempfile.NamedTemporaryFile(
+            prefix=basename, dir=dirname, delete=False
+        ).name, 'wb+')
+        fp2.write(new_header)
+
+        fp.seek(header_size, SEEK_SET)
+        for _ in range(buffer_count):
+            fp2.write(fp.read(buffersize))
+
+    fp2.close()
+    os.rename(fp2.name, fp.name)
+
+    return True
+
+def recover(filename, zerofill_incomplete=False):
+    with open(filename, mode="rb+") as fp:
+        hi = _HeaderInfo(fp)
+        shape, fortran_order, dtype = hi.shape, hi.fortran_order, hi.dtype
+        header_size, data_length = hi.header_size, hi.data_length
+
+        if not hi.needs_recovery:
+            return True
+
+        # if the old header is larger than the new one, it's fine
+        if not hi.is_appendable:
+            msg = "header not appendable, please call ensure_appendable first"
+            raise ValueError(msg)
+
+        append_axis_itemsize = numpy.multiply.reduce(
+            shape[slice(None, None, -1 if fortran_order else 1)][1:]
+        ) * dtype.itemsize
+
+        trailing_bytes = data_length % append_axis_itemsize
+
+        if trailing_bytes != 0:
+            if zerofill_incomplete is True:
+                zero_bytes_to_append = append_axis_itemsize - trailing_bytes
+                fp.write(b'\0'*(zero_bytes_to_append))
+                data_length += zero_bytes_to_append
+            else:
+                fp.truncate(header_size + data_length - trailing_bytes)
+                data_length -= trailing_bytes
+
+        new_shape = list(shape)
+        new_shape[-1 if fortran_order else 0] = \
+            data_length // append_axis_itemsize
+
+        fp.seek(0, SEEK_SET)
+        _write_array_header(fp, {
+            "shape": tuple(new_shape),
+            "fortran_order": fortran_order,
+            "descr": format.dtype_to_descr(dtype)
+        }, header_len=header_size)
+
+    return True
+
 class NpyAppendArray:
-    def __init__(self, filename):
+    fp = None
+    __lock, __is_init, __header_length = threading.Lock(), False, None
+
+    def __init__(
+        self, filename, delete_if_exists=False,
+        rewrite_header_on_append=True
+    ):
         self.filename = filename
-        self.fp = None
-        self.__is_init = False
-        if os.path.isfile(filename):
-            self.__init()
+        self.__rewrite_header_on_append = rewrite_header_on_append
 
-    def __create_header_bytes(self, spare_space = True):
-        from struct import pack
-        header_map = {
-            'descr': np.lib.format.dtype_to_descr(self.dtype),
-            'fortran_order': self.fortran_order,
-            'shape': tuple(self.shape)
-        }
-        io = BytesIO()
-        np.lib.format.write_array_header_2_0(io, header_map)
+        if os.path.exists(filename):
+            if delete_if_exists:
+                os.unlink(filename)
+            else:
+                self.__init_from_file()
 
-        # create array header with 64 byte space space for shape to grow
-        io.getbuffer()[8:12] = pack("<I", int(
-            io.getbuffer().nbytes-12+(64 if spare_space else 0)
-        ))
-        if spare_space:
-            io.getbuffer()[-1] = 32
-            io.write(b" "*64)
-            io.getbuffer()[-1] = 10
+    def __init_from_file(self):
+        fp = open(self.filename, "rb+")
+        self.fp = fp
 
-        return io.getbuffer()
+        hi = _HeaderInfo(fp)
+        self.shape, self.fortran_order, self.dtype, self.__header_length = (
+            hi.shape, hi.fortran_order, hi.dtype, hi.header_size
+        )
 
-    def __init(self, arr = None):
-        self.fp = open(self.filename, mode="rb+" if arr is None else "wb")
-        fp = self.fp
+        if self.dtype.hasobject:
+            raise ValueError("Object arrays cannot be appended to")
 
-        if arr is None:
-            magic = np.lib.format.read_magic(fp)
+        if not hi.is_appendable:
+            msg = "header of {} not appendable, please call " + \
+            "npy_append_array.ensure_appendable".format(self.filename)
+            raise ValueError(msg)
 
-            if magic != (2, 0):
-                raise NotImplementedError(
-                    "version (%d, %d) not implemented" % magic
-                )
-
-            header = np.lib.format.read_array_header_2_0(fp)
-            shape, self.fortran_order, self.dtype = header
-            self.shape = list(shape)
-
-            if self.fortran_order == True:
-                raise NotImplementedError("fortran_order not implemented")
-
-            self.header_length = fp.tell()
-
-            header_length = self.header_length
-
-            new_header_bytes = self.__create_header_bytes()
-
-            if len(new_header_bytes) != header_length:
-                raise TypeError("no spare header space in target file %s" % (
-                    self.filename
-                ))
-
-            self.fp.seek(0, SEEK_END)
-
-        else:
-            self.shape, self.fortran_order, self.dtype = \
-                list(arr.shape), False, arr.dtype
-
-            fp.write(self.__create_header_bytes())
-
-            self.header_length = fp.tell()
-
-            arr.tofile(fp)
+        if hi.needs_recovery:
+            msg = "cannot append to {}: file needs recovery, please call " + \
+            "npy_append_array.recover".format(self.filename)
+            raise ValueError(msg)
 
         self.__is_init = True
 
-    def __write_header(self):
+    def __write_array_header(self):
         fp = self.fp
         fp.seek(0, SEEK_SET)
 
-        new_header_bytes = self.__create_header_bytes()
-        header_length = self.header_length
+        _write_array_header(fp, {
+            "shape": self.shape,
+            "fortran_order": self.fortran_order,
+            "descr": format.dtype_to_descr(self.dtype)
+        }, header_len = self.__header_length)
 
-        if header_length != len(new_header_bytes):
-            new_header_bytes = self.__create_header_bytes(False)
-
-            # This can only happen if array became so large that header space
-            # space is exhausted, which requires more energy than is necessary
-            # to boil the earth's oceans:
-            # https://hbfs.wordpress.com/2009/02/10/to-boil-the-oceans
-            if header_length != len(new_header_bytes):
-                raise TypeError(
-                    "header length mismatch, old: %d, new: %d" % (
-                        header_length, len(new_header_bytes)
-                    )
-                )
-
-        fp.write(new_header_bytes)
-        fp.seek(0, SEEK_END)
+    def update_header(self):
+        with self.__lock:
+            self.__write_array_header()
 
     def append(self, arr):
-        if not arr.flags.c_contiguous:
-            raise NotImplementedError("ndarray needs to be c_contiguous")
+        with self.__lock:
+            if not self.__is_init:
+                with open(self.filename, 'wb') as fp:
+                    write_array(fp, arr)
+                self.__init_from_file()
+                return
 
-        if not self.__is_init:
-            self.__init(arr)
-            return
+            shape = self.shape
+            fortran_order = self.fortran_order
+            fortran_coeff = -1 if fortran_order else 1
 
-        if arr.dtype != self.dtype:
-            raise TypeError("incompatible ndarrays types %s and %s" % (
-                arr.dtype, self.dtype
-            ))
+            if shape[::fortran_coeff][1:][::fortran_coeff] != \
+            arr.shape[::fortran_coeff][1:][::fortran_coeff]:
+                msg = "array shapes can only differ on append axis: " \
+                "0 if C order or -1 if fortran order"
 
-        shape = self.shape
+                raise ValueError(msg)
 
-        if len(arr.shape) != len(shape):
-            raise TypeError("incompatible ndarrays shape lengths %s and %s" % (
-                len(arr.shape), len(shape)
-            ))
+            self.fp.seek(0, SEEK_END)
 
-        if shape[1:] != list(arr.shape[1:]):
-            raise TypeError("ndarray shapes can only differ on zero axis")
+            arr.astype(self.dtype, copy=False).flatten(
+                order='F' if self.fortran_order else 'C'
+            ).tofile(self.fp)
 
-        self.shape[0] += arr.shape[0]
+            self.shape = (*shape[:-1], shape[-1] + arr.shape[-1]) \
+                if fortran_order else (shape[0] + arr.shape[0], *shape[1:])
 
-        arr.tofile(self.fp)
-
-        self.__write_header()
+            if self.__rewrite_header_on_append:
+                self.__write_array_header()
 
     def close(self):
-        if self.__is_init:
-            self.fp.close()
+        with self.__lock:
+            if self.__is_init:
+                if not self.__rewrite_header_on_append:
+                    self.__write_array_header()
 
-            self.__is_init = False
+                self.fp.close()
+
+                self.__is_init = False
 
     def __del__(self):
         self.close()
