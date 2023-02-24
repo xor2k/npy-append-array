@@ -126,7 +126,7 @@ for (
         for thread in threads:
             thread.join()
 
-    arr = np.load(tmpfile, mmap_mode='r')
+    arr = np.load(tmpfile)
     arr_ref = np.concatenate(
         [arr1, *[arr2]*arr2_append_count],
         axis = -1 if is_fortran_array1 else 0,
@@ -136,3 +136,9 @@ for (
     assert np.all(arr == arr_ref)
 
     tmpfile.unlink(missing_ok=True)
+
+for i in range(40):
+    with NpyAppendArray(tmpfile) as npaa:
+        npaa.append(np.zeros((50000, 76, 3)))
+
+tmpfile.unlink(missing_ok=True)

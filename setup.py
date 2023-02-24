@@ -5,10 +5,10 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="npy-append-array",
-    version="0.9.15",
+    version="0.9.16",
     author="Michael Siebert",
     author_email="michael.siebert2k@gmail.com",
-    description="Create Numpy .npy files that are larger than the main memory",
+    description="Create Numpy .npy files by appending on the growth axis",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/xor2k/npy-append-array",

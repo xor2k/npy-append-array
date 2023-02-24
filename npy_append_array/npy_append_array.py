@@ -1,7 +1,11 @@
-import os, numpy, tempfile, threading
+import os, tempfile, threading
 from numpy.lib import format
 from .format import _write_array_header, write_array
 from io import BytesIO, SEEK_END, SEEK_SET
+# would prefer numpy.multiply.reduce or numpy.ceil, but has issues on win32,
+# since the default dtype is int32 there, even on 64 bit systems, see
+# https://stackoverflow.com/q/36278590
+from math import prod, ceil
 
 class _HeaderInfo():
     def __init__(self, fp):
@@ -28,8 +32,8 @@ class _HeaderInfo():
         self.is_appendable = len(self.new_header) <= header_size
 
         self.needs_recovery = not (
-            dtype.hasobject or self.data_length ==
-            numpy.multiply.reduce(shape) * dtype.itemsize
+            dtype.hasobject or
+            self.data_length == prod(shape) * dtype.itemsize
         )
 
 def is_appendable(filename):
@@ -55,13 +59,14 @@ def ensure_appendable(filename, inplace=False):
         # Set buffer size to 16 MiB to hide the Python loop overhead, see
         # https://github.com/numpy/numpy/blob/main/numpy/lib/format.py
         buffersize = min(16 * 1024 ** 2, data_length)
-        buffer_count = int(numpy.ceil(data_length / buffersize))
+        buffer_count = int(ceil(data_length / buffersize))
 
         if inplace:
-            for i in buffersize * numpy.arange(buffer_count - 1, -1, -1):
-                fp.seek(header_size + i, SEEK_SET)
+            for i in reversed(range(buffer_count)):
+                offset = i * buffersize
+                fp.seek(header_size + offset, SEEK_SET)
                 content = fp.read(buffersize)
-                fp.seek(new_header_size + i, SEEK_SET)
+                fp.seek(new_header_size + offset, SEEK_SET)
                 fp.write(content)
 
             fp.seek(0, SEEK_SET)
@@ -81,7 +86,7 @@ def ensure_appendable(filename, inplace=False):
             fp2.write(fp.read(buffersize))
 
     fp2.close()
-    os.rename(fp2.name, fp.name)
+    os.replace(fp2.name, fp.name)
 
     return True
 
@@ -99,7 +104,7 @@ def recover(filename, zerofill_incomplete=False):
             msg = "header not appendable, please call ensure_appendable first"
             raise ValueError(msg)
 
-        append_axis_itemsize = numpy.multiply.reduce(
+        append_axis_itemsize = prod(
             shape[slice(None, None, -1 if fortran_order else 1)][1:]
         ) * dtype.itemsize
 
@@ -157,13 +162,17 @@ class NpyAppendArray:
             raise ValueError("Object arrays cannot be appended to")
 
         if not hi.is_appendable:
-            msg = "header of {} not appendable, please call " + \
-            "npy_append_array.ensure_appendable".format(self.filename)
+            msg = (
+                "header of {} not appendable, please call " +
+                "npy_append_array.ensure_appendable"
+            ).format(self.filename)
             raise ValueError(msg)
 
         if hi.needs_recovery:
-            msg = "cannot append to {}: file needs recovery, please call " + \
-            "npy_append_array.recover".format(self.filename)
+            msg = (
+                "cannot append to {}: file needs recovery, please call " + 
+                "npy_append_array.recover"
+            ).format(self.filename)
             raise ValueError(msg)
 
         self.__is_init = True

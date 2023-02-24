@@ -86,5 +86,5 @@ maxed out dimensions (for a 64 bit machine) without increasing the array
 header size. This allows to simply rewrite the header as we append data to the
 end of the `.npy` file.
 
-## Suppored Systems
-Testes with Ubuntu Linux and macOS.
+## Supported Systems
+Testes with Ubuntu Linux, macOS and Windows.
