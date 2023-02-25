@@ -38,11 +38,11 @@ class _HeaderInfo():
 
 def is_appendable(filename):
     with open(filename, mode="rb") as fp:
-        return  _HeaderInfo(fp).is_appendable
+        return _HeaderInfo(fp).is_appendable
 
 def needs_recovery(filename):
     with open(filename, mode="rb") as fp:
-        return  _HeaderInfo(fp).needs_recovery
+        return _HeaderInfo(fp).needs_recovery
 
 def ensure_appendable(filename, inplace=False):
     with open(filename, mode="rb+") as fp:
@@ -99,7 +99,6 @@ def recover(filename, zerofill_incomplete=False):
         if not hi.needs_recovery:
             return True
 
-        # if the old header is larger than the new one, it's fine
         if not hi.is_appendable:
             msg = "header not appendable, please call ensure_appendable first"
             raise ValueError(msg)
@@ -163,14 +162,14 @@ class NpyAppendArray:
 
         if not hi.is_appendable:
             msg = (
-                "header of {} not appendable, please call " +
+                "header of {} not appendable, please call "
                 "npy_append_array.ensure_appendable"
             ).format(self.filename)
             raise ValueError(msg)
 
         if hi.needs_recovery:
             msg = (
-                "cannot append to {}: file needs recovery, please call " + 
+                "cannot append to {}: file needs recovery, please call " 
                 "npy_append_array.recover"
             ).format(self.filename)
             raise ValueError(msg)

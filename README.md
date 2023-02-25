@@ -87,4 +87,4 @@ header size. This allows to simply rewrite the header as we append data to the
 end of the `.npy` file.
 
 ## Supported Systems
-Testes with Ubuntu Linux, macOS and Windows.
+Tested with Ubuntu Linux, macOS and Windows.
