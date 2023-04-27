@@ -54,7 +54,7 @@ arr2 = np.array([[1,2],[3,4],[5,6]])
 
 filename = 'out.npy'
 
-with NpyAppendArray(filename) as npaa:
+with NpyAppendArray(filename, delete_if_exists=True) as npaa:
     npaa.append(arr1)
     npaa.append(arr2)
     npaa.append(arr2)
