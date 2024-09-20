@@ -1,0 +1,18 @@
+abstract: Create Numpy .npy files by appending on the growth axis
+authors:
+- family-names: Siebert
+  given-names: Michael
+  orcid: 0000-0002-1369-6321
+- family-names: Adelman
+  given-names: Joshua
+- family-names: Git
+  given-names: Yoav
+cff-version: 1.2.0
+date-released: '2023-02-24'
+doi: 10.5281/zenodo.13820984
+license:
+- mit
+repository-code: https://github.com/xor2k/npy-append-array/tree/0.9.16
+title: 'xor2k/npy-append-array: 0.9.16'
+type: software
+version: 0.9.16
