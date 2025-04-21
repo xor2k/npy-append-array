@@ -1,10 +1,8 @@
 from numpy.lib import format
 import warnings
 import numpy
-from numpy.compat import (
-    isfileobj, os_fspath, pickle
-)
-from numpy.lib.format import _check_version, header_data_from_array_1_0
+import pickle
+from numpy.lib.format import _check_version, header_data_from_array_1_0, isfileobj
 
 # slightly modified (hopefully one day published) version of
 # https://github.com/numpy/numpy/blob/main/numpy/lib/format.py

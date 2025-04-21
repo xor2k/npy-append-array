@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="npy-append-array",
-    version="0.9.16",
+    version="0.9.17",
     author="Michael Siebert",
     author_email="michael.siebert2k@gmail.com",
     description="Create Numpy .npy files by appending on the growth axis",
