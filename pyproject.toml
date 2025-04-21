@@ -1,0 +1,17 @@
+[project]
+name = "npy-append-array"
+version = "0.9.17"
+description = "Create Numpy .npy files by appending on the growth axis"
+readme = "README.md"
+license = "MIT"
+authors = [
+  { name = "Michael Siebert", email = "michael.siebert2k@gmail.com" }
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/xor2k/npy-append-array"
+
+[build-system]
+requires = ["setuptools>=78.1.1", "wheel"]
+build-backend = "setuptools.build_meta"
