@@ -5,7 +5,9 @@ description = "Create Numpy .npy files by appending on the growth axis"
 readme = "README.md"
 license = "MIT"
 authors = [
-  { name = "Michael Siebert", email = "michael.siebert2k@gmail.com" }
+  { name = "Michael Siebert", email = "michael.siebert2k@gmail.com" },
+  { name = "Joshua Adelman" },
+  { name = "Yoav Git" },
 ]
 dependencies = []
 
