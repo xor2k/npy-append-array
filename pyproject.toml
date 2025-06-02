@@ -1,13 +1,16 @@
 [project]
 name = "npy-append-array"
-version = "0.9.17"
+version = "0.9.18"
 description = "Create Numpy .npy files by appending on the growth axis"
 readme = "README.md"
 license = "MIT"
 authors = [
-  { name = "Michael Siebert", email = "michael.siebert2k@gmail.com" },
+  { name = "Michael Siebert"},
   { name = "Joshua Adelman" },
   { name = "Yoav Git" },
+]
+maintainers = [
+  { name = "Michael Siebert", email = "michael.siebert2k@gmail.com" }
 ]
 dependencies = []
 
