@@ -23,14 +23,15 @@ for fortran_order in [False, True]:
         slice(None, None, -1 if arr.flags.fnc else 1)
     ][1:])
 
-    def get_array_header(dtype=arr.dtype):
-        fp = io.BytesIO()
-        np.lib.format._write_array_header(fp, {
-            'shape': arr.shape,
-            'fortran_order': arr.flags.fnc,
-            'descr': np.lib.format.dtype_to_descr(dtype)
-        })
-        return fp.getvalue()
+    # very simple method, may break in the future and might need fixing then
+    def get_array_header_bytes_from_file():
+        npy_bytes = tmpfile.read_bytes()
+        possible_sizes = [64, 128, 192]
+        header_size = [x for x in possible_sizes if npy_bytes[x-1:x] == b'\n']
+
+        assert(len(header_size) == 1)
+        
+        return npy_bytes[:header_size[0]]
 
     # ensure_appendable
     for inplace in [False, True]:
@@ -40,12 +41,14 @@ for fortran_order in [False, True]:
         )])
 
         np.save(tmpfile, arr.astype(dtype=dtype_template))
-
+        orig_header = get_array_header_bytes_from_file()
+         
         with open(tmpfile, 'rb+') as fp:
             # overwrite with a non-appendable header
-            fp.write(get_array_header(dtype_template).replace(
-                b' \n', b'\n'
-            ).replace(b'\'_', b'\'__'))
+            space_to_remove = len(orig_header) - 127
+            fp.write(orig_header.replace(
+                b' ' * space_to_remove + b'\n', b'\n'
+            ).replace(b'\'_', b'\'_' + b'_' * space_to_remove))
 
         assert not npy_append_array.is_appendable(tmpfile)
 
@@ -59,7 +62,7 @@ for fortran_order in [False, True]:
         np.save(tmpfile, arr)
 
         os.truncate(tmpfile, (
-            tmpfile.stat().st_size + len(get_array_header())
+            tmpfile.stat().st_size + len(get_array_header_bytes_from_file())
         ) // 2)
 
         npy_append_array.recover(tmpfile, zerofill_incomplete)

@@ -1,6 +1,6 @@
 [project]
 name = "npy-append-array"
-version = "0.9.18"
+version = "0.9.19"
 description = "Create Numpy .npy files by appending on the growth axis"
 readme = "README.md"
 license = "MIT"

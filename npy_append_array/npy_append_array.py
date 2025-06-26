@@ -1,6 +1,6 @@
 import os, tempfile, threading
 from numpy.lib import format
-from .format import _write_array_header, write_array
+from .format import _read_array_header, _write_array_header, write_array
 from io import BytesIO, SEEK_END, SEEK_SET
 # would prefer numpy.multiply.reduce or numpy.ceil, but has issues on win32,
 # since the default dtype is int32 there, even on 64 bit systems, see
@@ -10,7 +10,7 @@ from math import prod, ceil
 class _HeaderInfo():
     def __init__(self, fp):
         version = format.read_magic(fp)
-        shape, fortran_order, dtype = format._read_array_header(fp, version)
+        shape, fortran_order, dtype = _read_array_header(fp, version)
         self.shape, self.fortran_order, self.dtype = (
             shape, fortran_order, dtype
         )

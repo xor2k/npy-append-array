@@ -2,7 +2,172 @@ from numpy.lib import format
 import warnings
 import numpy
 import pickle
-from numpy.lib.format import _check_version, header_data_from_array_1_0, isfileobj
+from numpy.lib.format import header_data_from_array_1_0, isfileobj
+
+# TODO modify Numpy once again so that those functions are not needed anymore
+
+# not available anymore since Numpy 2.3
+EXPECTED_KEYS = {'descr', 'fortran_order', 'shape'}
+
+# not available anymore since Numpy 2.3
+_header_size_info = {
+    (1, 0): ('<H', 'latin1'),
+    (2, 0): ('<I', 'latin1'),
+    (3, 0): ('<I', 'utf8'),
+}
+
+# not available anymore since Numpy 2.3
+_MAX_HEADER_SIZE = 10000
+
+# not available anymore since Numpy 2.3
+def _filter_header(s):
+    """Clean up 'L' in npz header ints.
+
+    Cleans up the 'L' in strings representing integers. Needed to allow npz
+    headers produced in Python2 to be read in Python3.
+
+    Parameters
+    ----------
+    s : string
+        Npy file header.
+
+    Returns
+    -------
+    header : str
+        Cleaned up header.
+
+    """
+    import tokenize
+    from io import StringIO
+
+    tokens = []
+    last_token_was_number = False
+    for token in tokenize.generate_tokens(StringIO(s).readline):
+        token_type = token[0]
+        token_string = token[1]
+        if (last_token_was_number and
+                token_type == tokenize.NAME and
+                token_string == "L"):
+            continue
+        else:
+            tokens.append(token)
+        last_token_was_number = (token_type == tokenize.NUMBER)
+    return tokenize.untokenize(tokens)
+
+# not available anymore since Numpy 2.3
+def _read_bytes(fp, size, error_template="ran out of data"):
+    """
+    Read from file-like object until size bytes are read.
+    Raises ValueError if not EOF is encountered before size bytes are read.
+    Non-blocking objects only supported if they derive from io objects.
+
+    Required as e.g. ZipExtFile in python 2.6 can return less data than
+    requested.
+    """
+    data = bytes()
+    while True:
+        # io files (default in python3) return None or raise on
+        # would-block, python2 file will truncate, probably nothing can be
+        # done about that.  note that regular files can't be non-blocking
+        try:
+            r = fp.read(size - len(data))
+            data += r
+            if len(r) == 0 or len(data) == size:
+                break
+        except BlockingIOError:
+            pass
+    if len(data) != size:
+        msg = "EOF: reading %s, expected %d bytes got %d"
+        raise ValueError(msg % (error_template, size, len(data)))
+    else:
+        return data
+
+# not available anymore since Numpy 2.3
+def _check_version(version):
+    if version not in [(1, 0), (2, 0), (3, 0), None]:
+        msg = "we only support format version (1,0), (2,0), and (3,0), not %s"
+        raise ValueError(msg % (version,))
+
+# not available anymore since Numpy 2.3
+def _read_array_header(fp, version, max_header_size=_MAX_HEADER_SIZE):
+    """
+    see read_array_header_1_0
+    """
+    # Read an unsigned, little-endian short int which has the length of the
+    # header.
+    import ast
+    import struct
+    hinfo = _header_size_info.get(version)
+    if hinfo is None:
+        raise ValueError("Invalid version {!r}".format(version))
+    hlength_type, encoding = hinfo
+
+    hlength_str = _read_bytes(fp, struct.calcsize(hlength_type), "array header length")
+    header_length = struct.unpack(hlength_type, hlength_str)[0]
+    header = _read_bytes(fp, header_length, "array header")
+    header = header.decode(encoding)
+    if len(header) > max_header_size:
+        raise ValueError(
+            f"Header info length ({len(header)}) is large and may not be safe "
+            "to load securely.\n"
+            "To allow loading, adjust `max_header_size` or fully trust "
+            "the `.npy` file using `allow_pickle=True`.\n"
+            "For safety against large resource use or crashes, sandboxing "
+            "may be necessary.")
+
+    # The header is a pretty-printed string representation of a literal
+    # Python dictionary with trailing newlines padded to a ARRAY_ALIGN byte
+    # boundary. The keys are strings.
+    #   "shape" : tuple of int
+    #   "fortran_order" : bool
+    #   "descr" : dtype.descr
+    # Versions (2, 0) and (1, 0) could have been created by a Python 2
+    # implementation before header filtering was implemented.
+    #
+    # For performance reasons, we try without _filter_header first though
+    try:
+        d = ast.literal_eval(header)
+    except SyntaxError as e:
+        if version <= (2, 0):
+            header = _filter_header(header)
+            try:
+                d = ast.literal_eval(header)
+            except SyntaxError as e2:
+                msg = "Cannot parse header: {!r}"
+                raise ValueError(msg.format(header)) from e2
+            else:
+                warnings.warn(
+                    "Reading `.npy` or `.npz` file required additional "
+                    "header parsing as it was created on Python 2. Save the "
+                    "file again to speed up loading and avoid this warning.",
+                    UserWarning, stacklevel=4)
+        else:
+            msg = "Cannot parse header: {!r}"
+            raise ValueError(msg.format(header)) from e
+    if not isinstance(d, dict):
+        msg = "Header is not a dictionary: {!r}"
+        raise ValueError(msg.format(d))
+
+    if EXPECTED_KEYS != d.keys():
+        keys = sorted(d.keys())
+        msg = "Header does not contain the correct keys: {!r}"
+        raise ValueError(msg.format(keys))
+
+    # Sanity-check the values.
+    if (not isinstance(d['shape'], tuple) or
+            not all(isinstance(x, int) for x in d['shape'])):
+        msg = "shape is not valid: {!r}"
+        raise ValueError(msg.format(d['shape']))
+    if not isinstance(d['fortran_order'], bool):
+        msg = "fortran_order is not a valid bool: {!r}"
+        raise ValueError(msg.format(d['fortran_order']))
+    try:
+        dtype = format.descr_to_dtype(d['descr'])
+    except TypeError as e:
+        msg = "descr is not a valid dtype descriptor: {!r}"
+        raise ValueError(msg.format(d['descr'])) from e
+
+    return d['shape'], d['fortran_order'], dtype
 
 # slightly modified (hopefully one day published) version of
 # https://github.com/numpy/numpy/blob/main/numpy/lib/format.py
@@ -14,7 +179,7 @@ def _wrap_header(header, version, header_len=None):
     """
     import struct
     assert version is not None
-    fmt, encoding = format._header_size_info[version]
+    fmt, encoding = _header_size_info[version]
     header = header.encode(encoding)
     hlen = len(header) + 1
     padlen = format.ARRAY_ALIGN - ((
